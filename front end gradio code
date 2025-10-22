@@ -1,0 +1,66 @@
+import numpy as np
+import pandas as pd
+import xgboost as xgb
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder
+from sklearn.metrics import accuracy_score
+import gradio as gr
+
+df = pd.read_csv("/content/brain_mri_radiomics_100k.csv")
+
+
+df['sex'] = df['sex'].fillna('Unknown')
+le = LabelEncoder()
+df['tumor_type'] = le.fit_transform(df['tumor_type'])
+df['tumor_present'] = le.fit_transform(df['tumor_present'])
+df['sex'] = le.fit_transform(df['sex'])
+
+
+X = df[["age", "sex", "mean_intensity", "std_intensity", "snr", "glcm_contrast", "entropy", "lesion_volume_cc"]]
+y = df["tumor_present"]
+
+X = X.fillna(X.mean())
+y = y.fillna(y.mode()[0])
+
+
+x_train, x_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+
+model = xgb.XGBClassifier()
+model.fit(x_train, y_train)
+
+
+Y_pred = model.predict(x_test)
+ac = accuracy_score(y_test, Y_pred)
+print(f"Model Accuracy: {ac:.2f}")
+
+
+def predict_tumor_presence(age, sex, mean_intensity, std_intensity, snr, glcm_contrast, entropy, lesion_volume_cc):
+
+    input_data = np.array([[age, sex, mean_intensity, std_intensity, snr, glcm_contrast, entropy, lesion_volume_cc]])
+    prediction = model.predict(input_data)[0]
+    return "Tumor Present" if prediction == 1 else "No Tumor"
+
+
+inputs = [
+    gr.Number(label="Age"),
+    gr.Radio(choices=[0, 1, 2], label="Sex (0=Female, 1=Male, 2=Unknown)"),
+    gr.Number(label="Mean Intensity"),
+    gr.Number(label="STD Intensity"),
+    gr.Number(label="SNR"),
+    gr.Number(label="GLCM Contrast"),
+    gr.Number(label="Entropy"),
+    gr.Number(label="Lesion Volume (cc)")
+]
+
+output = gr.Textbox(label="Prediction")
+
+app = gr.Interface(
+    fn=predict_tumor_presence,
+    inputs=inputs,
+    outputs=output,
+    title="Brain MRI Tumor Presence Prediction",
+    description=f"Enter MRI parameters to predict if a tumor is present. Model Accuracy: {ac:.2f}"
+)
+
+app.launch()
